@@ -33,7 +33,6 @@ let logChannel = null;
 // Функция обновления статуса
 async function updateStatus() {
   try {
-    // Пытаемся получить данные с GMod сервера
     const response = await fetch(`http://${config.gmodHost}:${config.gmodPort}/players`);
     
     if (response.ok) {
@@ -48,7 +47,6 @@ async function updateStatus() {
       });
       console.log(`✅ Статус обновлен: ${statusText}`);
     } else {
-      // Сервер не ответил
       client.user.setPresence({
         activities: [{ name: 'Сервер выключен', type: Discord.ActivityType.Watching }],
         status: 'idle'
@@ -56,7 +54,6 @@ async function updateStatus() {
       console.log('⚠️ Сервер не отвечает');
     }
   } catch (error) {
-    // Ошибка подключения к серверу
     client.user.setPresence({
       activities: [{ name: 'Сервер выключен', type: Discord.ActivityType.Watching }],
       status: 'idle'
@@ -65,11 +62,47 @@ async function updateStatus() {
   }
 }
 
-// Обработчик HTTP запросов от GMod
+// ============= ОБРАБОТЧИК GET ЗАПРОСОВ (ДЛЯ LUA) =============
+app.get('/log', (req, res) => {
+  const token = req.query.token;
+  const message = req.query.message;
+  const color = parseInt(req.query.color) || 3447003;
+
+  console.log(`📨 GET запрос от GMod`);
+  console.log(`  Token: ${token}`);
+  console.log(`  Message: ${message}`);
+  console.log(`  Color: ${color}`);
+
+  // Проверка токена
+  if (token !== config.authToken) {
+    console.log('❌ Неверный токен!');
+    return res.status(401).send('Неверный токен');
+  }
+
+  if (!logChannel) {
+    console.log('❌ Канал логов не найден!');
+    return res.status(500).send('Канал логов не найден');
+  }
+
+  // Отправка сообщения в Discord
+  logChannel.send(message)
+    .then(() => {
+      console.log('✅ Сообщение отправлено в Discord');
+      res.send('OK');
+    })
+    .catch((error) => {
+      console.error('❌ Ошибка отправки:', error);
+      res.status(500).send('Ошибка отправки сообщения');
+    });
+});
+
+// ============= ОБРАБОТЧИК POST ЗАПРОСОВ (ДЛЯ СОВРЕМЕННЫХ ВЕРСИЙ) =============
 app.post('/log', (req, res) => {
   const { token, message, color } = req.body;
   
-  console.log('📨 Получен запрос от GMod');
+  console.log('📨 POST запрос от GMod');
+  console.log(`  Token: ${token}`);
+  console.log(`  Message: ${message}`);
   
   // Проверка токена
   if (token !== config.authToken) {
@@ -94,27 +127,41 @@ app.post('/log', (req, res) => {
     });
 });
 
-// Обработчик для GET запросов (для проверки работы)
+// ============= ГЛАВНАЯ СТРАНИЦА (ПРОВЕРКА РАБОТЫ) =============
 app.get('/', (req, res) => {
   res.json({ 
     status: 'online', 
     bot: client.user ? client.user.tag : 'не запущен',
-    server: 'GMod Discord Bot'
+    server: 'GMod Discord Bot',
+    endpoints: {
+      '/': 'Информация о боте',
+      '/log (GET)': 'Отправка логов через GET (для старых версий GMod)',
+      '/log (POST)': 'Отправка логов через POST (для новых версий GMod)'
+    }
   });
 });
+
+// ============= ЗАПУСК БОТА =============
 
 // Событие готовности бота
 client.once('ready', () => {
   console.log(`✅ Бот запущен: ${client.user.tag}`);
+  console.log(`📊 ID бота: ${client.user.id}`);
   
   // Получение канала для логов
   logChannel = client.channels.cache.get(config.logChannelId);
   if (logChannel) {
-    console.log(`✅ Канал логов найден: #${logChannel.name}`);
+    console.log(`✅ Канал логов найден: #${logChannel.name} (${logChannel.id})`);
     logChannel.send('🟢 **Бот запущен и готов к работе!**');
   } else {
-    console.error('❌ Канал логов НЕ НАЙДЕН! Проверьте LOG_CHANNEL_ID');
-    console.log(`🔍 ID канала в конфиге: ${config.logChannelId}`);
+    console.error('❌ Канал логов НЕ НАЙДЕН!');
+    console.log(`🔍 Проверьте LOG_CHANNEL_ID: ${config.logChannelId}`);
+    console.log(`📋 Доступные каналы:`);
+    client.channels.cache.forEach(ch => {
+      if (ch.type === 0) { // Текстовые каналы
+        console.log(`  - #${ch.name} (${ch.id})`);
+      }
+    });
   }
 
   // Первоначальное обновление статуса
@@ -127,6 +174,7 @@ client.once('ready', () => {
   
   console.log(`🚀 HTTP сервер запущен на порту ${config.httpPort}`);
   console.log(`🔄 Статус обновляется каждые ${config.updateInterval/1000} секунд`);
+  console.log(`🔗 URL бота: https://gmod-discord-bot.onrender.com`);
 });
 
 // Запуск HTTP сервера
@@ -144,4 +192,14 @@ client.login(config.discordBotToken)
 // Обработка ошибок
 process.on('unhandledRejection', (error) => {
   console.error('❌ Необработанная ошибка:', error);
+});
+
+// Обработка завершения
+process.on('SIGTERM', () => {
+  console.log('🛑 Получен сигнал завершения. Бот останавливается...');
+  if (logChannel) {
+    logChannel.send('🔴 **Бот останавливается...**');
+  }
+  client.destroy();
+  process.exit(0);
 });
