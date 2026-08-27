@@ -1,0 +1,18 @@
+{
+  "name": "gmod-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for Garry's Mod server status and logs",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "axios": "^1.6.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
